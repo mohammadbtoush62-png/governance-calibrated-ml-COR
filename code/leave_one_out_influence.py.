@@ -1,0 +1,50 @@
+# code/leave_one_out_influence.py
+import pandas as pd
+import numpy as np
+import os
+
+IN = "results/cv_results.csv"
+OUT = "results/leave_one_out_influence.csv"
+os.makedirs("results", exist_ok=True)
+
+df = pd.read_csv(IN)
+y = df["y_true"].values
+
+def metrics(y_true, y_pred):
+    mse = np.mean((y_true - y_pred) ** 2)
+    rmse = np.sqrt(mse)
+    mae = np.mean(np.abs(y_true - y_pred))
+    # R2 using population formula
+    ss_res = np.sum((y_true - y_pred) ** 2)
+    ss_tot = np.sum((y_true - np.mean(y_true)) ** 2)
+    r2 = 1 - ss_res / ss_tot if ss_tot > 0 else np.nan
+    return rmse, mae, r2
+
+models = {"y_lr":"Linear","y_lasso":"LASSO","y_ridge":"Ridge","y_svr":"SVR"}
+base_metrics = {}
+for col,name in models.items():
+    base_metrics[name] = metrics(y, df[col].values)
+
+rows = []
+n = len(df)
+for i in range(n):
+    mask = np.ones(n, bool)
+    mask[i] = False
+    y_i = y[mask]
+    row = {"fold_removed": int(df.loc[i,"fold"])}
+    for col,name in models.items():
+        pred = df[col].values[mask]
+        rmse, mae, r2 = metrics(y_i, pred)
+        base_rmse, base_mae, base_r2 = base_metrics[name]
+        row.update({
+            f"{name}_rmse": rmse,
+            f"{name}_rmse_delta": rmse - base_rmse,
+            f"{name}_mae": mae,
+            f"{name}_mae_delta": mae - base_mae,
+            f"{name}_r2": r2,
+            f"{name}_r2_delta": r2 - base_r2
+        })
+    rows.append(row)
+
+pd.DataFrame(rows).to_csv(OUT, index=False)
+print(f"Wrote influence results to {OUT}")
